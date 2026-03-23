@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="虚岁与生肖" />
+  <meta name="theme-color" content="#1a1d23" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <title>虚岁与生肖产生器</title>
+  <script src="https://cdn.jsdelivr.net/npm/lunar-javascript@1.6.12/lunar.js"></script>
+  <style>
+    :root {
+      --bg: #1a1d23;
+      --card: #252a33;
+      --text: #e8eaed;
+      --muted: #9aa0a6;
+      --accent: #c9a227;
+      --border: #3c424c;
+      --ok: #34a853;
+      --warn: #f9ab00;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: radial-gradient(ellipse at top, #2d3340 0%, var(--bg) 55%);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    .panel {
+      width: 100%;
+      max-width: 420px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .sub {
+      margin: 0 0 1.25rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    input[type="number"] {
+      width: 100%;
+      padding: 0.65rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 1rem;
+    }
+    input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    button {
+      width: 100%;
+      margin-top: 1rem;
+      padding: 0.7rem 1rem;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(180deg, #d4af37 0%, #a67c00 100%);
+      color: #1a1a1a;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover {
+      filter: brightness(1.06);
+    }
+    button:active {
+      transform: scale(0.99);
+    }
+    #out {
+      margin-top: 1.25rem;
+      padding: 1rem;
+      border-radius: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      min-height: 5rem;
+      font-size: 0.95rem;
+      line-height: 1.65;
+    }
+    #out.empty {
+      color: var(--muted);
+    }
+    .row { margin: 0.35rem 0; }
+    .tag {
+      display: inline-block;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-left: 0.35rem;
+      vertical-align: middle;
+    }
+    .tag.ok { background: rgba(52, 168, 83, 0.2); color: var(--ok); }
+    .tag.wait { background: rgba(249, 171, 0, 0.2); color: var(--warn); }
+    .err { color: #ea4335; }
+    .hl { color: var(--accent); font-weight: 600; }
+    .dl {
+      display: inline-block;
+      margin-top: 0.9rem;
+      font-size: 0.85rem;
+      color: #8ab4f8;
+      text-decoration: none;
+    }
+    .dl:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1>虚岁与生肖产生器</h1>
+    <p class="sub">
+      输入<strong>中华民国</strong>年份，按下「输入完成」后，依农历正月初一为年界计算虚岁与生肖（仅输入民国年时，以该年<strong>阳历 7 月 1 日</strong>所在农历年代表出生农历年）。
+    </p>
+    <label for="roc">中华民国年（例如：113 表示民国 113 年）</label>
+    <input id="roc" type="number" inputmode="numeric" min="1" max="300" placeholder="例：70" />
+    <button type="button" id="btn">输入完成</button>
+    <a class="dl" href="./ios-profile.mobileconfig" download>下载 iOS 描述文件（mobileconfig）</a>
+    <div id="out" class="empty">填写民国年后点击按钮，结果将显示于此。</div>
+  </div>
+
+  <script>
+(function () {
+  'use strict';
+
+  /**
+   * 将中华民国年份转为公元年（民國元年 = 1912 年）。
+   * @param {number} rocYear - 中华民国年份
+   * @returns {number} 公元年份
+   */
+  function rocToGregorianYear(rocYear) {
+    return 1911 + rocYear;
+  }
+
+  /**
+   * 取得某农历年正月初一对应的公历日期（以正月初一为农历年之始，与库一致）。
+   * @param {number} lunarYear - 农历年（如 2025）
+   * @returns {{ year: number, month: number, day: number }} 公历年月日
+   */
+  function getLunarNewYearSolar(lunarYear) {
+    var jie = Lunar.fromYmd(lunarYear, 1, 1).getSolar();
+    return { year: jie.getYear(), month: jie.getMonth(), day: jie.getDay() };
+  }
+
+  /**
+   * 比较公历日期 a 是否在 b 当天或之后（仅比较年月日）。
+   * @param {Date} a
+   * @param {{ year: number, month: number, day: number }} b
+   * @returns {boolean}
+   */
+  function isOnOrAfterSolarDate(a, b) {
+    var ay = a.getFullYear();
+    var am = a.getMonth() + 1;
+    var ad = a.getDate();
+    if (ay !== b.year) return ay > b.year;
+    if (am !== b.month) return am > b.month;
+    return ad >= b.day;
+  }
+
+  /**
+   * 当前「公历年」内，是否已过该农历年正月初一对应的公历日（春节是否已到）。
+   * @param {Date} now - 当前时刻
+   * @returns {{ passed: boolean, lnySolar: { year: number, month: number, day: number }, gregorianYear: number }} passed 是否已过年；lnySolar 该年春节的公历日期
+   */
+  function getSpringFestivalStatusForCalendarYear(now) {
+    var gy = now.getFullYear();
+    var lnySolar = getLunarNewYearSolar(gy);
+    return {
+      passed: isOnOrAfterSolarDate(now, lnySolar),
+      lnySolar: lnySolar,
+      gregorianYear: gy
+    };
+  }
+
+  /**
+   * 依民国年与当下日期计算虚岁、生肖与春节状态。
+   * @param {number} rocYear - 中华民国年份
+   * @param {Date} [now] - 基准日期（默认今天）
+   * @returns {{ xuSui: number, shengXiao: string, birthLunarYear: number, currentLunarYear: number, spring: object, note: string }}
+   */
+  function computeXuSuiAndShengXiao(rocYear, now) {
+    now = now || new Date();
+    var g = rocToGregorianYear(rocYear);
+    /** 仅知民国年时，用该年阳历 7 月 1 日判断所属农历年与生肖（已在春节之后，避免年初歧义）。 */
+    var birthSolar = Solar.fromYmd(g, 7, 1);
+    var birthLunar = birthSolar.getLunar();
+    var birthLunarYear = birthLunar.getYear();
+    var shengXiao = birthLunar.getYearShengXiao();
+
+    var currentLunar = Solar.fromDate(now).getLunar();
+    var currentLunarYear = currentLunar.getYear();
+    var xuSui = currentLunarYear - birthLunarYear + 1;
+
+    var spring = getSpringFestivalStatusForCalendarYear(now);
+    var note = '生肖与虚岁均以农历正月初一为年界；虚岁 = 当前农历年 − 出生农历年 + 1。';
+
+    return {
+      xuSui: xuSui,
+      shengXiao: shengXiao,
+      birthLunarYear: birthLunarYear,
+      currentLunarYear: currentLunarYear,
+      spring: spring,
+      note: note
+    };
+  }
+
+  /**
+   * 将结果渲染为 HTML 字符串。
+   * @param {{ xuSui: number, shengXiao: string, birthLunarYear: number, currentLunarYear: number, spring: { passed: boolean, lnySolar: { year: number, month: number, day: number }, gregorianYear: number }, note: string }} r - 计算结果
+   * @returns {string}
+   */
+  function formatResultHtml(r) {
+    var sp = r.spring;
+    var d = sp.lnySolar;
+    var dateStr = d.year + ' 年 ' + d.month + ' 月 ' + d.day + ' 日';
+    var tag = sp.passed
+      ? '<span class="tag ok">已过正月初一</span>'
+      : '<span class="tag wait">尚未过正月初一</span>';
+    var lineSpring =
+      '当前公历年 <span class="hl">' + sp.gregorianYear + '</span> 的春节（农历正月初一）为阳历 ' +
+      dateStr + '。' + tag;
+
+    return (
+      '<div class="row"><strong>虚岁：</strong><span class="hl">' + r.xuSui + '</span> 岁</div>' +
+      '<div class="row"><strong>生肖：</strong><span class="hl">' + r.shengXiao + '</span></div>' +
+      '<div class="row"><strong>推算用农历年：</strong>出生农历年 ' + r.birthLunarYear + ' · 当前农历年 ' + r.currentLunarYear + '</div>' +
+      '<div class="row" style="margin-top:0.75rem">' + lineSpring + '</div>' +
+      '<div class="row" style="margin-top:0.6rem;font-size:0.8rem;color:var(--muted)">' + r.note + '</div>'
+    );
+  }
+
+  var rocInput = document.getElementById('roc');
+  var btn = document.getElementById('btn');
+  var out = document.getElementById('out');
+
+  btn.addEventListener('click', function () {
+    if (typeof Solar === 'undefined' || typeof Lunar === 'undefined') {
+      out.className = '';
+      out.innerHTML = '<span class="err">农历库未加载，请检查网络后刷新页面（需加载 lunar-javascript）。</span>';
+      return;
+    }
+
+    var raw = rocInput.value.trim();
+    var roc = parseInt(raw, 10);
+    if (raw === '' || isNaN(roc)) {
+      out.className = '';
+      out.innerHTML = '<span class="err">请输入有效的中华民国年份（正整数）。</span>';
+      return;
+    }
+    if (roc < 1 || roc > 400) {
+      out.className = '';
+      out.innerHTML = '<span class="err">民国年请输入合理范围（例如 1–400）。</span>';
+      return;
+    }
+
+    var g = rocToGregorianYear(roc);
+    var now = new Date();
+    if (g > now.getFullYear()) {
+      out.className = '';
+      out.innerHTML = '<span class="err">该民国年对应的公元年（' + g + '）晚于今年，无法计算虚岁。</span>';
+      return;
+    }
+
+    try {
+      var result = computeXuSuiAndShengXiao(roc, now);
+      if (result.xuSui < 1) {
+        out.className = '';
+        out.innerHTML = '<span class="err">计算得到虚岁小于 1，请确认输入。</span>';
+        return;
+      }
+      out.className = '';
+      out.innerHTML = formatResultHtml(result);
+    } catch (e) {
+      out.className = '';
+      out.innerHTML = '<span class="err">计算出错：' + String(e.message || e) + '</span>';
+    }
+  });
+})();
+  </script>
+</body>
+</html>
